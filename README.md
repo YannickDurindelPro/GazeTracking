@@ -2,10 +2,11 @@
 
 Configure and launch for linux : 
 
-mkdir build
+```mkdir build
 cd build
 cmake ../
 make
 ./bin/eyeLike
+```
 
 Enjoy !
