@@ -12,3 +12,5 @@ make
 ```
 
 Enjoy !
+
+NB : Please note that you will need to install a model in res folder. Check readme in res.
