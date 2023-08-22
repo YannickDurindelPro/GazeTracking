@@ -2,7 +2,9 @@
 
 Configure and launch for linux : 
 
-```mkdir build
+```
+git clone https://github.com/YannickDurindelPro/GazeTracking.git
+mkdir build
 cd build
 cmake ../
 make
