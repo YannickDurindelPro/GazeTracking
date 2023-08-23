@@ -1,6 +1,7 @@
-#include <opencv2/objdetect/objdetect.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/objdetect.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/opencv.hpp>
 #include <opencv2/face.hpp>
 #include <opencv2/face/facemark.hpp>
 
@@ -36,6 +37,11 @@ void landmarks( Mat frame, vector<Rect> faces, Ptr<Facemark> facemark );
 //-- Note, either copy these two files from opencv/data/haarscascades to your current folder, or change these locations
 String face_cascade_name = "../res/haarcascade_frontalface_alt.xml";
 CascadeClassifier face_cascade;
+
+// Load pre-trained model
+string modelFile = "/home/eyelights/Documents/face_detection/detect_godot/src/camera/res10_300x300_ssd_iter_140000.caffemodel";
+string configFile = "/home/eyelights/Documents/face_detection/detect_godot/src/camera/deploy.prototxt";
+dnn::Net net = dnn::readNetFromCaffe(configFile, modelFile);
 string main_window_name = "Capture - Face detection";
 string face_window_name = "Capture - Face";
 RNG rng(12345);
@@ -158,6 +164,7 @@ void findEyes(Mat frame_gray, Rect face, vector<vector<Point2f>> shapes) {
   rectangle(debugFace,leftLeftCornerRegion,200);
   rectangle(debugFace,rightLeftCornerRegion,200);
   rectangle(debugFace,rightRightCornerRegion,200);
+
   // change eye centers to face coordinates
   rightPupil.x += rightEyeRegion.x;
   rightPupil.y += rightEyeRegion.y;
@@ -167,10 +174,22 @@ void findEyes(Mat frame_gray, Rect face, vector<vector<Point2f>> shapes) {
   circle(debugFace, rightPupil, 3, 1234);
   circle(debugFace, leftPupil, 3, 1234);
 
-  std::vector<float> left_limit = {(shapes[0][38].x + shapes[0][40].x)/2 , (shapes[0][44].x + shapes[0][46].x)/2};
-  std::vector<float> right_limit = {(shapes[0][37].x + shapes[0][41].x)/2 , (shapes[0][43].x + shapes[0][47].x)/2};
-  std::vector<float> up_limit = {(shapes[0][36].y + shapes[0][39].y + shapes[0][37].y + shapes[0][38].y)/4 , (shapes[0][42].y + shapes[0][45].y + shapes[0][43].y + shapes[0][44].y)/4};
-  std::vector<float> down_limit = {(shapes[0][36].y + shapes[0][39].y)/2 , (shapes[0][42].y + shapes[0][45].y)/2};
+  vector<float> left_limit = {(shapes[0][38].x + shapes[0][40].x)/2 , (shapes[0][44].x + shapes[0][46].x)/2};
+  vector<float> right_limit = {(shapes[0][37].x + shapes[0][41].x)/2 , (shapes[0][43].x + shapes[0][47].x)/2};
+  vector<float> up_limit = {(shapes[0][36].y + shapes[0][39].y + shapes[0][37].y + shapes[0][38].y)/4 , (shapes[0][42].y + shapes[0][45].y + shapes[0][43].y + shapes[0][44].y)/4};
+  vector<float> down_limit = {(shapes[0][36].y + shapes[0][39].y)/2 , (shapes[0][42].y + shapes[0][45].y)/2};
+
+  /*float lefteyex = (shapes[0][36].x + shapes[0][37].x + shapes[0][38].x + shapes[0][39].x + shapes[0][40].x + shapes[0][41].x)/6 - face.x; 
+  float lefteyey = (shapes[0][36].y + shapes[0][37].y + shapes[0][38].y + shapes[0][39].y + shapes[0][40].y + shapes[0][41].y)/6 - face.y;
+  cv::Point lefteye = Point(int(lefteyex) , int(lefteyey));
+  arrowedLine(faceROI, leftPupil, lefteye, Scalar(255,255,255), 1);
+  circle(faceROI, lefteye, 3, 200);
+
+  float righteyex = (shapes[0][42].x + shapes[0][43].x + shapes[0][44].x + shapes[0][45].x + shapes[0][46].x + shapes[0][47].x)/6 - face.x; 
+  float righteyey = (shapes[0][42].y + shapes[0][43].y + shapes[0][44].y + shapes[0][45].y + shapes[0][46].y + shapes[0][47].y)/6 - face.y;
+  cv::Point righteye = Point(int(righteyex) , int(righteyey));
+  arrowedLine(faceROI, rightPupil, righteye, Scalar(255, 255, 255), 1);
+  circle(faceROI, righteye, 3, 200);*/
 
   // change eye centers to frame coordinates
   rightPupil.x += face.x;
@@ -193,7 +212,9 @@ void findEyes(Mat frame_gray, Rect face, vector<vector<Point2f>> shapes) {
     direction += "DOWN";
   }
 
-  putText(faceROI, direction, cv::Point(0,30), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(255, 255, 255), 2);
+  putText(faceROI, direction, Point(0,30), FONT_HERSHEY_SIMPLEX, 0.9, Scalar(255, 255, 255), 2);
+
+
 
   //-- Find Eye Corners
   if (kEnableEyeCorner) {
@@ -250,6 +271,7 @@ void detectAndDisplay( Mat frame, Ptr<Facemark> facemark ) {
   vector<Rect> faces;
   vector<vector<Point2f>> shapes;
   //Mat frame_gray;
+  int x1; int x2; int y1; int y2;
 
   vector<Mat> rgbChannels(3);
   split(frame, rgbChannels);
@@ -257,13 +279,51 @@ void detectAndDisplay( Mat frame, Ptr<Facemark> facemark ) {
 
   //-- Detect faces
   face_cascade.detectMultiScale( frame_gray, faces, 1.1, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT, Size(150, 150) );
+
+  // Perform face detection
+  net.setPreferableBackend(dnn::DNN_BACKEND_CUDA);
+  net.setPreferableTarget(dnn::DNN_TARGET_CUDA_FP16);
+
+  Mat blob = dnn::blobFromImage(frame, 1.0, Size(300, 300), Scalar(104, 177, 123));
+  net.setInput(blob);
+  Mat detections = net.forward();
+
+  // Process the detections and draw bounding boxes around faces
+  Mat detectionsMat(detections.size[2], detections.size[3], CV_32F, detections.ptr<float>());
+  for (int i = 0; i < detectionsMat.rows; ++i) {
+    float confidence = detectionsMat.at<float>(i, 2);
+    if (confidence > 0.3) {  // You can adjust this threshold as needed
+      x1 = static_cast<int>(detectionsMat.at<float>(i, 3) * frame.cols);
+      y1 = static_cast<int>(detectionsMat.at<float>(i, 4) * frame.rows);
+      x2 = static_cast<int>(detectionsMat.at<float>(i, 5) * frame.cols);
+      y2 = static_cast<int>(detectionsMat.at<float>(i, 6) * frame.rows);
+      rectangle(frame, Point(x1, y1), Point(x2, y2), Scalar(0, 255, 0), 2);
+    }
+  }
+  
   if (!faces.empty()) {
     if (facemark->fit(frame, faces, shapes))  {
       for (size_t i = 0; i < faces.size(); i++) {
-        for (unsigned long k = 36; k < 48 ; k++)
+        for (unsigned long k = 0; k < shapes[i].size() ; k++)
           circle(frame, shapes[i][k], 2, Scalar(0, 255, 0), FILLED);
       }
     }
+
+    cv::Point center = Point((x1+x2)/2, (y1+y2)/2);
+    circle(frame, center, 2, Scalar(255, 0, 0), FILLED);
+
+    float eyesx = (shapes[0][36].x + shapes[0][37].x + shapes[0][38].x + shapes[0][39].x + shapes[0][40].x + shapes[0][41].x + shapes[0][42].x + shapes[0][43].x + shapes[0][44].x + shapes[0][45].x + shapes[0][46].x + shapes[0][47].x)/12 ; 
+    float eyesy = (shapes[0][36].y + shapes[0][37].y + shapes[0][38].y + shapes[0][39].y + shapes[0][40].y + shapes[0][41].y + shapes[0][42].y + shapes[0][43].y + shapes[0][44].y + shapes[0][45].y + shapes[0][46].y + shapes[0][47].y)/12 ;
+    cv::Point eyes = Point(int(eyesx) , int(eyesy*1.1));
+    //circle(frame, eyes, 3, Scalar(255, 0, 0), FILLED);
+    arrowedLine(frame, center, Point(eyes.x,center.y), Scalar(0,0,255), 3);
+
+    float eyebrowsx = (shapes[0][18].x + shapes[0][19].x + shapes[0][20].x + shapes[0][21].x + shapes[0][22].x + shapes[0][23].x + shapes[0][24].x + shapes[0][25].x + shapes[0][26].x + shapes[0][27].x)/10; 
+    float eyebrowsy = (shapes[0][18].y + shapes[0][19].y + shapes[0][20].y + shapes[0][21].y + shapes[0][22].y + shapes[0][23].y + shapes[0][24].y + shapes[0][25].y + shapes[0][26].y + shapes[0][27].y)/10;
+    cv::Point eyebrows = Point(int(eyebrowsx) , int(eyebrowsy*1.26));
+    //circle(frame, eyebrows, 3, Scalar(0, 0, 0), FILLED);
+    //cout << (eyebrowsy*1.25-(y1+y2)/2)/(y1-y2) << endl;
+    arrowedLine(frame, center, Point(center.x,eyebrows.y), Scalar(255,0,0), 3, 2);
   }
 
 //  findSkin(debugImage);
